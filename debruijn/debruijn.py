@@ -40,9 +40,7 @@ def isfile(path): # pragma: no cover
     """Check if path is an existing file.
 
     :param path: (str) Path to the file
-    
     :raises ArgumentTypeError: If file doesn't exist
-    
     :return: (str) Path 
     """
     if not os.path.isfile(path):
@@ -155,8 +153,18 @@ def remove_paths(graph, path_list, delete_entry_node, delete_sink_node):
     :param delete_sink_node: (boolean) True->We remove the last node of a path
     :return: (nx.DiGraph) A directed graph object
     """
-    pass
-
+    for path in path_list :
+        if not path :
+            continue
+        if delete_entry_node and delete_sink_node :
+            graph.remove_nodes_from(path)
+        elif delete_entry_node : 
+            graph.remove_nodes_from(path[:-1])
+        elif delete_sink_node :
+            graph.remove_nodes_from(path[1:])          
+        else :
+            graph.remove_nodes_from(path[1:-1])
+    return graph
 
 def select_best_path(graph, path_list, path_length, weight_avg_list, 
                     delete_entry_node=False, delete_sink_node=False):
@@ -309,7 +317,6 @@ def main(): # pragma: no cover
     """
     # Get arguments
     args = get_arguments()
-
     # Fonctions de dessin du graphe
     # A decommenter si vous souhaitez visualiser un petit 
     # graphe
@@ -317,11 +324,8 @@ def main(): # pragma: no cover
     # if args.graphimg_file:
     #     draw_graph(graph, args.graphimg_file)
     #Partie a
-    
     #fastQ
-
     reads = read_fastq(args.fastq_file)
-    
     #Kmers
     kmer_size = 7  
     for read in reads:
@@ -329,7 +333,6 @@ def main(): # pragma: no cover
         #lecture et ses k-mères
         print("Lecture : ", read)
         print("K-mères : ", kmers)
-    
     #Kmer_dict
     kmer_dict = build_kmer_dict(args.fastq_file, kmer_size)
     print("\nDictionnaire des k-mères et de leurs occurrences :")
@@ -340,19 +343,16 @@ def main(): # pragma: no cover
     
     #Partie b
     digraph = build_graph(kmer_dict)
-
     # Identification des nœuds d'entrée et de sortie
     entrance_nodes = get_starting_nodes(digraph)
     print("entrance_nodes : ", entrance_nodes)
     output_nodes = get_sink_nodes(digraph)
     print("output_nodes : ", output_nodes)
-
     # Extraction des contigs
     contigs = get_contigs(digraph, entrance_nodes, output_nodes)
     for contig, length in contigs:
         print(f"Contig : {contig}, Longueur : {length}")
     save_contigs(contigs, "contigs.fasta")
-
     # Dessiner le graphe
     pos = nx.spring_layout(digraph)
     nx.draw(digraph, pos, with_labels=False, node_size=10, node_color='b', font_size=8)
