@@ -61,8 +61,8 @@ def get_arguments(): # pragma: no cover
     """
     # Parsing arguments
     parser = argparse.ArgumentParser(description=__doc__, usage=
-                                     "{0} -h"
-                                     .format(sys.argv[0]))
+                                    "{0} -h"
+                                    .format(sys.argv[0]))
     parser.add_argument('-i', dest='fastq_file', type=isfile,
                         required=True, help="Fastq file")
     parser.add_argument('-k', dest='kmer_size', type=int,
@@ -81,7 +81,15 @@ def read_fastq(fastq_file):
     :param fastq_file: (str) Path to the fastq file.
     :return: A generator object that iterate the read sequences. 
     """
-    pass
+    with open(fastq_file, "r") as file:
+        for line in file:
+            yield(next(file).strip())
+            next(file)
+            next(file)
+
+
+
+
 
 
 def cut_kmer(read, kmer_size):
@@ -90,8 +98,9 @@ def cut_kmer(read, kmer_size):
     :param read: (str) Sequence of a read.
     :return: A generator object that iterate the kmers of of size kmer_size.
     """
-    pass
-
+    for i in range(0, len(read) - kmer_size + 1):
+        kmer = read[i:i + kmer_size]
+        yield kmer
 
 def build_kmer_dict(fastq_file, kmer_size):
     """Build a dictionnary object of all kmer occurrences in the fastq file
@@ -99,7 +108,16 @@ def build_kmer_dict(fastq_file, kmer_size):
     :param fastq_file: (str) Path to the fastq file.
     :return: A dictionnary object that identify all kmer occurrences.
     """
-    pass
+    # store k-mers and their occurrences
+    kmer_dict = {}  
+    for read in read_fastq(fastq_file):
+        for kmer in cut_kmer(read, kmer_size):
+            if kmer in kmer_dict:
+                kmer_dict[kmer] += 1  # +1 existing k-mer
+            else:
+                kmer_dict[kmer] = 1  # + new k-mer in dic
+
+    return kmer_dict
 
 
 def build_graph(kmer_dict):
@@ -108,8 +126,24 @@ def build_graph(kmer_dict):
     :param kmer_dict: A dictionnary object that identify all kmer occurrences.
     :return: A directed graph (nx) of all kmer substring and weight (occurrence).
     """
-    pass
+    digraph = nx.DiGraph()
 
+    # Iterate through the k-mer dictionary
+    for kmer, occurrence in kmer_dict.items():
+        # Split the k-mer into prefix and suffix
+        prefix = kmer[:-1]
+        suffix = kmer[1:]
+
+        # Check if the prefix and suffix nodes exist, and create them if not
+        if not digraph.has_node(prefix):
+            digraph.add_node(prefix)
+        if not digraph.has_node(suffix):
+            digraph.add_node(suffix)
+
+        # Add an edge from the prefix to the suffix with the weight (occurrence)
+        digraph.add_edge(prefix, suffix, weight=occurrence)
+
+    return digraph
 
 def remove_paths(graph, path_list, delete_entry_node, delete_sink_node):
     """Remove a list of path in a graph. A path is set of connected node in
@@ -125,7 +159,7 @@ def remove_paths(graph, path_list, delete_entry_node, delete_sink_node):
 
 
 def select_best_path(graph, path_list, path_length, weight_avg_list, 
-                     delete_entry_node=False, delete_sink_node=False):
+                    delete_entry_node=False, delete_sink_node=False):
     """Select the best path between different paths
 
     :param graph: (nx.DiGraph) A directed graph object
@@ -187,7 +221,11 @@ def get_starting_nodes(graph):
     :param graph: (nx.DiGraph) A directed graph object
     :return: (list) A list of all nodes without predecessors
     """
-    pass
+    starting_nodes = []
+    for node in graph.nodes():
+        if not any(graph.predecessors(node)):
+            starting_nodes.append(node)
+    return starting_nodes
 
 def get_sink_nodes(graph):
     """Get nodes without successors
@@ -195,7 +233,11 @@ def get_sink_nodes(graph):
     :param graph: (nx.DiGraph) A directed graph object
     :return: (list) A list of all nodes without successors
     """
-    pass
+    sink_nodes = []
+    for node in graph.nodes():
+        if not any(graph.successors(node)):
+            sink_nodes.append(node)
+    return sink_nodes
 
 def get_contigs(graph, starting_nodes, ending_nodes):
     """Extract the contigs from the graph
@@ -205,7 +247,21 @@ def get_contigs(graph, starting_nodes, ending_nodes):
     :param ending_nodes: (list) A list of nodes without successors
     :return: (list) List of [contiguous sequence and their length]
     """
-    pass
+    contigs = []
+
+    for start_node in starting_nodes:
+        for end_node in ending_nodes:
+            if nx.has_path(graph, start_node, end_node):
+                paths = nx.all_simple_paths(graph, source=start_node, target=end_node)
+                for path in paths:
+                    contig = path[0]
+                    for i in range(1, len(path)):
+                        contig += path[i][-1]
+                    contig_length = len(contig)
+                    contigs.append((contig, contig_length))
+    
+    return contigs
+
 
 def save_contigs(contigs_list, output_file):
     """Write all contigs in fasta format
@@ -213,7 +269,12 @@ def save_contigs(contigs_list, output_file):
     :param contig_list: (list) List of [contiguous sequence and their length]
     :param output_file: (str) Path to the output file
     """
-    pass
+    with open(output_file, 'w') as output:
+        for i, (contig, length) in enumerate(contigs_list):
+            header = f">contig_{i} len={length}\n"
+            formatted_contig = textwrap.fill(contig, width=80)
+            output.write(header)
+            output.write(formatted_contig + '\n')
 
 
 def draw_graph(graph, graphimg_file): # pragma: no cover
@@ -228,12 +289,12 @@ def draw_graph(graph, graphimg_file): # pragma: no cover
     esmall = [(u, v) for (u, v, d) in graph.edges(data=True) if d['weight'] <= 3]
     #print(elarge)
     # Draw the graph with networkx
-    #pos=nx.spring_layout(graph)
+    #pos=nx.spring_layout(graph)"""
     pos = nx.random_layout(graph)
     nx.draw_networkx_nodes(graph, pos, node_size=6)
     nx.draw_networkx_edges(graph, pos, edgelist=elarge, width=6)
     nx.draw_networkx_edges(graph, pos, edgelist=esmall, width=6, alpha=0.5, 
-                           edge_color='b', style='dashed')
+                        edge_color='b', style='dashed')
     #nx.draw_networkx(graph, pos, node_size=10, with_labels=False)
     # save image
     plt.savefig(graphimg_file)
@@ -255,7 +316,49 @@ def main(): # pragma: no cover
     # Plot the graph
     # if args.graphimg_file:
     #     draw_graph(graph, args.graphimg_file)
+    #Partie a
+    
+    #fastQ
 
+    reads = read_fastq(args.fastq_file)
+    
+    #Kmers
+    kmer_size = 7  
+    for read in reads:
+        kmers = list(cut_kmer(read, kmer_size))
+        #lecture et ses k-mères
+        print("Lecture : ", read)
+        print("K-mères : ", kmers)
+    
+    #Kmer_dict
+    kmer_dict = build_kmer_dict(args.fastq_file, kmer_size)
+    print("\nDictionnaire des k-mères et de leurs occurrences :")
+    print(kmer_dict)
+    #better print
+    #for kmer, occurrence in kmer_dict.items():
+    #    print(f"K-mer : {kmer}, Occurrence : {occurrence}")
+    
+    #Partie b
+    digraph = build_graph(kmer_dict)
+
+    # Identification des nœuds d'entrée et de sortie
+    entrance_nodes = get_starting_nodes(digraph)
+    print("entrance_nodes : ", entrance_nodes)
+    output_nodes = get_sink_nodes(digraph)
+    print("output_nodes : ", output_nodes)
+
+    # Extraction des contigs
+    contigs = get_contigs(digraph, entrance_nodes, output_nodes)
+    for contig, length in contigs:
+        print(f"Contig : {contig}, Longueur : {length}")
+    save_contigs(contigs, "contigs.fasta")
+
+    # Dessiner le graphe
+    pos = nx.spring_layout(digraph)
+    nx.draw(digraph, pos, with_labels=False, node_size=10, node_color='b', font_size=8)
+    plt.savefig("graph.png")
+    plt.close()
+    # I'll continue with pytest
 
 if __name__ == '__main__': # pragma: no cover
     main()
