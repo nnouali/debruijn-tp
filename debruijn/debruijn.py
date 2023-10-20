@@ -290,34 +290,27 @@ def solve_entry_tips(graph, starting_nodes):
 
 
     :param graph: (nx.DiGraph) A directed graph object
-    :return: (nx.DiGraph) A directed graph object
+    :param starting_nodes: (list) List of starting nodes
+    :return: (nx.DiGraph) A directed graph object without unwanted entry paths
     """
 
 
-    nodes_with_multiple_predecessors = [node for node, degree in graph.in_degree() if degree > 1]
-    
-    for node in nodes_with_multiple_predecessors:
+
+
+    for node in list(graph.nodes):
+        all_paths_for_node = []
         predecessors = list(graph.predecessors(node))
-        
-        if any(predecessor in starting_nodes for predecessor in predecessors):
-            # Extract paths from starting nodes to the current node
-            paths_from_starting = [list(nx.all_simple_paths(graph, source=start, target=node))[0] for start in starting_nodes if nx.has_path(graph, start, node)]
-            
-            # Calculate the weights of these paths
-            path_weights = []
-            for path in paths_from_starting:
-                weights = [graph[path[i]][path[i+1]].get('weight', 1) for i in range(len(path)-1)]
-                path_weights.append(sum(weights))
-            
-            # Determine the main path
-            main_path_index = path_weights.index(max(path_weights))
-            
-            # Remove other paths
-            for i, path in enumerate(paths_from_starting):
-                if i != main_path_index:
-                    for j in range(len(path) - 1):
-                        graph.remove_edge(path[j], path[j+1])
-    
+        if len(predecessors)>1:
+                for start_node in starting_nodes:
+                    if node not in starting_nodes:
+                        paths =  list(nx.all_simple_paths(graph, start_node, node))
+                        all_paths_for_node.append(paths[0])#toujours un seul path
+                if len(all_paths_for_node)>1 :
+                    path_length = [len(path) for path in all_paths_for_node]
+                    path_weigths = [path_average_weight(graph, all_paths_for_node[i])  if path_length[i] >1 else graph[paths[i][0]][paths[i][1]]["weight"] for i in range(len(all_paths_for_node)) ]
+                    graph = select_best_path(graph, all_paths_for_node,path_length, path_weigths, delete_entry_node=True, delete_sink_node=False)
+                    #graph = solve_entry_tips(graph, starting_nodes)
+                    break
     return graph
 
 
@@ -330,27 +323,22 @@ def solve_out_tips(graph, ending_nodes):
     :param graph: (nx.DiGraph) A directed graph object
     :return: (nx.DiGraph) A directed graph object
     """
-
-
-    # Pour chaque nœud du graphe
-    for node in graph.nodes():
-        # Récupération des successeurs
+    for node in list(graph.nodes):
+        all_paths_for_node = []
         successors = list(graph.successors(node))
-        
-        # Si le nœud a plus d'un successeur
-        if len(successors) > 1:
-            # Récupération des poids des arêtes vers les successeurs
-            weights = [graph[node][succ]['weight'] for succ in successors]
-            
-            # On supprime l'arête avec le poids le plus faible
-            min_weight = min(weights)
-            for succ in successors:
-                if graph[node][succ]['weight'] == min_weight:
-                    graph.remove_edge(node, succ)
-                    break  # On sort de la boucle dès la suppression
-
-
+        if len(successors)>1:
+                for end_node in ending_nodes:
+                    if node not in ending_nodes:
+                        paths =  list(nx.all_simple_paths(graph, node, end_node))
+                        all_paths_for_node.append(paths[0])#toujours un seul path
+                if len(all_paths_for_node)>1 :
+                    path_length = [len(path) for path in all_paths_for_node]
+                    path_weigths = [path_average_weight(graph, all_paths_for_node[i])  if path_length[i] >1 else graph[paths[i][0]][paths[i][1]]["weight"] for i in range(len(all_paths_for_node)) ]
+                    graph = select_best_path(graph, all_paths_for_node,path_length, path_weigths, delete_entry_node=False, delete_sink_node=True)
+                    #graph = solve_out_tips(graph, ending_nodes)
+                    break
     return graph
+
 
 
 def get_starting_nodes(graph):
@@ -376,7 +364,6 @@ def get_sink_nodes(graph):
     for node in graph.nodes():
         if not any(graph.successors(node)):
             sink_nodes.append(node)
-    print(sink_nodes)
     return sink_nodes
 
 def get_contigs(graph, starting_nodes, ending_nodes):
@@ -390,9 +377,7 @@ def get_contigs(graph, starting_nodes, ending_nodes):
     contigs = []
 
     for start_node in starting_nodes:
-        print("ICCCII",start_node)
         for end_node in ending_nodes:
-            print("LAAA",start_node)
 
             if nx.has_path(graph, start_node, end_node):
                 paths = nx.all_simple_paths(graph, source=start_node, target=end_node)
@@ -477,13 +462,21 @@ def main(): # pragma: no cover
     
     #Partie b
     digraph = build_graph(kmer_dict)
+    digraph = simplify_bubbles(digraph)
+
     # Identification des nœuds d'entrée et de sortie
     entrance_nodes = get_starting_nodes(digraph)
+
     #print("entrance_nodes : ", entrance_nodes)
     output_nodes = get_sink_nodes(digraph)
-    digraph = simplify_bubbles(digraph)
+
     digraph = solve_entry_tips(digraph, entrance_nodes)
+
     digraph = solve_out_tips(digraph, output_nodes)
+    entrance_nodes = get_starting_nodes(digraph)
+
+    #print("entrance_nodes : ", entrance_nodes)
+    output_nodes = get_sink_nodes(digraph)
     #print("output_nodes : ", output_nodes)
     # Extraction des contigs
     contigs = get_contigs(digraph, entrance_nodes, output_nodes)
