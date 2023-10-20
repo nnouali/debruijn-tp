@@ -85,11 +85,6 @@ def read_fastq(fastq_file):
             next(file)
             next(file)
 
-
-
-
-
-
 def cut_kmer(read, kmer_size):
     """Cut read into kmers of size kmer_size.
     
@@ -172,16 +167,52 @@ def select_best_path(graph, path_list, path_length, weight_avg_list,
 
     :param graph: (nx.DiGraph) A directed graph object
     :param path_list: (list) A list of path
-    :param path_length_list: (list) A list of length of each path
+    :param path_length: (list) A list of length of each path
     :param weight_avg_list: (list) A list of average weight of each path
     :param delete_entry_node: (boolean) True->We remove the first node of a path 
     :param delete_sink_node: (boolean) True->We remove the last node of a path
     :return: (nx.DiGraph) A directed graph object
     """
-    pass
+    if len(path_list) == 0:
+        return graph 
+    best_path = None
+
+    weight_stddev = statistics.stdev(weight_avg_list)
+
+    if weight_stddev > 0:
+        best_path_index = weight_avg_list.index(max(weight_avg_list))
+        best_path = path_list[best_path_index]
+
+    else:
+        length_stddev = statistics.stdev(path_length)
+
+        if length_stddev > 0:
+            best_path_index = path_length.index(max(path_length))
+            best_path = path_list[best_path_index]
+
+        else:
+            rd_index = random.randint(0, len(path_list) - 1)
+            best_path = path_list[rd_index]
+
+
+    # Remove unwanted paths from the graph
+    for path in path_list:
+        if path != best_path:
+            remove_path = path.copy()
+            if not delete_entry_node:
+                remove_path.pop(0)
+            if not delete_sink_node:
+                remove_path.pop(-1)
+            graph.remove_nodes_from(remove_path)
+
+
+    return graph
+
+
 
 def path_average_weight(graph, path):
     """Compute the weight of a path
+
 
     :param graph: (nx.DiGraph) A directed graph object
     :param path: (list) A path consist of a list of nodes
@@ -189,39 +220,138 @@ def path_average_weight(graph, path):
     """
     return statistics.mean([d["weight"] for (u, v, d) in graph.subgraph(path).edges(data=True)])
 
+
 def solve_bubble(graph, ancestor_node, descendant_node):
     """Explore and solve bubble issue
+
 
     :param graph: (nx.DiGraph) A directed graph object
     :param ancestor_node: (str) An upstream node in the graph 
     :param descendant_node: (str) A downstream node in the graph
     :return: (nx.DiGraph) A directed graph object
     """
-    pass
+    # Find all simple paths between the ancestor and descendant node
+    all_paths = list(nx.all_simple_paths(graph, source=ancestor_node, target=descendant_node))
+    
+    path_lengths = [len(path) for path in all_paths]
+    weight_avg_list = []
+    
+    for path in all_paths:
+        weights = []
+        for i in range(len(path) - 1):
+            edge_data = graph[path[i]][path[i+1]]
+            weight = edge_data.get('weight', 1)
+            weights.append(weight)
+        
+        avg_weight = sum(weights) / len(weights) if weights else 1
+        weight_avg_list.append(avg_weight)
+    
+    cleaned_graph = select_best_path(graph, all_paths, path_lengths, weight_avg_list)
+    
+    return cleaned_graph
 
 def simplify_bubbles(graph):
     """Detect and explode bubbles
 
+
     :param graph: (nx.DiGraph) A directed graph object
     :return: (nx.DiGraph) A directed graph object
     """
-    pass
+    bubble_detected = False 
+
+
+    # Parcourir chaque nœud du graphe
+    for node in graph.nodes():
+        predecessors = list(graph.predecessors(node))
+        if len(predecessors) > 1:
+            for i in range(len(predecessors)):
+                for j in range(i+1, len(predecessors)):
+                    common_ancestor = nx.lowest_common_ancestor(graph, predecessors[i], predecessors[j])
+                    if common_ancestor:
+                        bubble_detected = True
+                        break
+                if bubble_detected:
+                    break
+
+
+        if bubble_detected:
+            break
+    
+    # Si une bulle est détectée, résolvez-la et continuez de manière récursive jusqu'à ce qu'il n'y ait plus de bulles
+    if bubble_detected:
+        graph = simplify_bubbles(solve_bubble(graph, common_ancestor, node))
+
+
+    return graph
+
 
 def solve_entry_tips(graph, starting_nodes):
     """Remove entry tips
 
+
     :param graph: (nx.DiGraph) A directed graph object
     :return: (nx.DiGraph) A directed graph object
     """
-    pass
+
+
+    nodes_with_multiple_predecessors = [node for node, degree in graph.in_degree() if degree > 1]
+    
+    for node in nodes_with_multiple_predecessors:
+        predecessors = list(graph.predecessors(node))
+        
+        if any(predecessor in starting_nodes for predecessor in predecessors):
+            # Extract paths from starting nodes to the current node
+            paths_from_starting = [list(nx.all_simple_paths(graph, source=start, target=node))[0] for start in starting_nodes if nx.has_path(graph, start, node)]
+            
+            # Calculate the weights of these paths
+            path_weights = []
+            for path in paths_from_starting:
+                weights = [graph[path[i]][path[i+1]].get('weight', 1) for i in range(len(path)-1)]
+                path_weights.append(sum(weights))
+            
+            # Determine the main path
+            main_path_index = path_weights.index(max(path_weights))
+            
+            # Remove other paths
+            for i, path in enumerate(paths_from_starting):
+                if i != main_path_index:
+                    for j in range(len(path) - 1):
+                        graph.remove_edge(path[j], path[j+1])
+    
+    return graph
+
+
+
 
 def solve_out_tips(graph, ending_nodes):
     """Remove out tips
 
+
     :param graph: (nx.DiGraph) A directed graph object
     :return: (nx.DiGraph) A directed graph object
     """
-    pass
+
+
+    # Pour chaque nœud du graphe
+    for node in graph.nodes():
+        # Récupération des successeurs
+        successors = list(graph.successors(node))
+        
+        # Si le nœud a plus d'un successeur
+        if len(successors) > 1:
+            # Récupération des poids des arêtes vers les successeurs
+            weights = [graph[node][succ]['weight'] for succ in successors]
+            
+            # On supprime l'arête avec le poids le plus faible
+            min_weight = min(weights)
+            for succ in successors:
+                if graph[node][succ]['weight'] == min_weight:
+                    graph.remove_edge(node, succ)
+                    break  # On sort de la boucle dès la suppression
+
+
+    return graph
+
 
 def get_starting_nodes(graph):
     """Get nodes without predecessors
@@ -230,6 +360,7 @@ def get_starting_nodes(graph):
     :return: (list) A list of all nodes without predecessors
     """
     starting_nodes = []
+
     for node in graph.nodes():
         if not any(graph.predecessors(node)):
             starting_nodes.append(node)
@@ -245,6 +376,7 @@ def get_sink_nodes(graph):
     for node in graph.nodes():
         if not any(graph.successors(node)):
             sink_nodes.append(node)
+    print(sink_nodes)
     return sink_nodes
 
 def get_contigs(graph, starting_nodes, ending_nodes):
@@ -258,15 +390,17 @@ def get_contigs(graph, starting_nodes, ending_nodes):
     contigs = []
 
     for start_node in starting_nodes:
+        print("ICCCII",start_node)
         for end_node in ending_nodes:
+            print("LAAA",start_node)
+
             if nx.has_path(graph, start_node, end_node):
                 paths = nx.all_simple_paths(graph, source=start_node, target=end_node)
                 for path in paths:
                     contig = path[0]
                     for i in range(1, len(path)):
                         contig += path[i][-1]
-                    contig_length = len(contig)
-                    contigs.append((contig, contig_length))
+                    contigs.append((contig, len(contig)))
     
     return contigs
 
@@ -327,16 +461,16 @@ def main(): # pragma: no cover
     #fastQ
     reads = read_fastq(args.fastq_file)
     #Kmers
-    kmer_size = 7  
-    for read in reads:
-        kmers = list(cut_kmer(read, kmer_size))
-        #lecture et ses k-mères
-        print("Lecture : ", read)
-        print("K-mères : ", kmers)
+    #kmer_size = args.kmer_size  
+    #for read in reads:
+    #    kmers = list(cut_kmer(read, args.kmer_size))
+    #    #lecture et ses k-mères
+    #    print("Lecture : ", read)
+    #    print("K-mères : ", kmers)
     #Kmer_dict
-    kmer_dict = build_kmer_dict(args.fastq_file, kmer_size)
-    print("\nDictionnaire des k-mères et de leurs occurrences :")
-    print(kmer_dict)
+    kmer_dict = build_kmer_dict(args.fastq_file, args.kmer_size)
+    #print("\nDictionnaire des k-mères et de leurs occurrences :")
+    #print(kmer_dict)
     #better print
     #for kmer, occurrence in kmer_dict.items():
     #    print(f"K-mer : {kmer}, Occurrence : {occurrence}")
@@ -345,20 +479,23 @@ def main(): # pragma: no cover
     digraph = build_graph(kmer_dict)
     # Identification des nœuds d'entrée et de sortie
     entrance_nodes = get_starting_nodes(digraph)
-    print("entrance_nodes : ", entrance_nodes)
+    #print("entrance_nodes : ", entrance_nodes)
     output_nodes = get_sink_nodes(digraph)
-    print("output_nodes : ", output_nodes)
+    digraph = simplify_bubbles(digraph)
+    digraph = solve_entry_tips(digraph, entrance_nodes)
+    digraph = solve_out_tips(digraph, output_nodes)
+    #print("output_nodes : ", output_nodes)
     # Extraction des contigs
     contigs = get_contigs(digraph, entrance_nodes, output_nodes)
-    for contig, length in contigs:
-        print(f"Contig : {contig}, Longueur : {length}")
-    save_contigs(contigs, "contigs.fasta")
+    
+    #for contig, length in contigs:
+    #    print(f"Contig : {contig}, Longueur : {length}")
+    save_contigs(contigs, args.output_file)
     # Dessiner le graphe
     pos = nx.spring_layout(digraph)
     nx.draw(digraph, pos, with_labels=False, node_size=10, node_color='b', font_size=8)
     plt.savefig("graph.png")
     plt.close()
-    # I'll continue with pytest
-
+    
 if __name__ == '__main__': # pragma: no cover
     main()
