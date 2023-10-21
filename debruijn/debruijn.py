@@ -27,13 +27,13 @@ import textwrap
 import matplotlib.pyplot as plt
 matplotlib.use("Agg")
 
-__author__ = "Your Name"
+__author__ = "Noura Nouali"
 __copyright__ = "Universite Paris Diderot"
-__credits__ = ["Your Name"]
+__credits__ = ["Noura Nouali"]
 __license__ = "GPL"
 __version__ = "1.0.0"
-__maintainer__ = "Your Name"
-__email__ = "your@email.fr"
+__maintainer__ = "Noura Nouali"
+__email__ = "noualinoura@gmail.com"
 __status__ = "Developpement"
 
 def isfile(path): # pragma: no cover
